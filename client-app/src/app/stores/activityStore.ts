@@ -1,3 +1,8 @@
+import {
+  HubConnection,
+  HubConnectionBuilder,
+  LogLevel,
+} from "@microsoft/signalr";
 import { observable, action, computed, configure, runInAction } from "mobx";
 import { SyntheticEvent } from "react";
 import { toast } from "react-toastify";
@@ -19,6 +24,53 @@ export default class ActivityStore {
   @observable submitting = false;
   @observable target = "";
   @observable loading = false;
+  @observable.ref hubConnection: HubConnection | null = null;
+
+  @action createHubConnection = (activityId: string) => {
+    this.hubConnection = new HubConnectionBuilder()
+      .withUrl("http://localhost:5000/chat", {
+        accessTokenFactory: () => this.rootStore.commonStore.token!,
+      })
+      .configureLogging(LogLevel.Information)
+      .build();
+
+    this.hubConnection
+      .start()
+      .then(() => console.log(this.hubConnection!.state))
+      .then(() => {
+        console.log('Attempting to join group');
+        this.hubConnection!.invoke('AddToGroup', activityId)
+      })
+      .catch((error) => console.log("Error establishing connection: ", error));
+
+    this.hubConnection.on("ReceiveComment", (comment) => {
+      runInAction(() => {
+        this.activity!.comments.push(comment);
+      });
+    });
+
+    this.hubConnection.on('Send', message => {
+      toast.info(message);
+    })
+  };
+
+  @action stopHubConnection = () => {
+    this.hubConnection?.invoke('RemoveFromGroup', this.activity!.id)
+    .then(() => {
+      this.hubConnection!.stop();
+    })
+    .then(() => console.log('Connection stopped'))
+    .catch(err => console.log(err))    
+  };
+
+  @action addComment = async (values: any) => {
+    values.activityId = this.activity!.id;
+    try {
+      await this.hubConnection!.invoke("SendComment", values);
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
   @computed get activitiesByDate() {
     return this.groupActivitiesByDate(
@@ -102,6 +154,7 @@ export default class ActivityStore {
       let attendees = [];
       attendees.push(attendee);
       activity.attendees = attendees;
+      activity.comments = [];
       activity.isHost = true;
       runInAction("creating activity", () => {
         this.activityRegistry.set(activity.id, activity);
@@ -170,15 +223,14 @@ export default class ActivityStore {
           this.activityRegistry.set(this.activity.id, this.activity);
           this.loading = false;
         }
-      })
-    } catch (error){
+      });
+    } catch (error) {
       runInAction(() => {
         this.loading = false;
-      })     
-      toast.error('Problem signing up to activity');
+      });
+      toast.error("Problem signing up to activity");
     }
-    
-    }
+  };
 
   @action cancelAttendance = async () => {
     this.loading = true;
@@ -193,13 +245,12 @@ export default class ActivityStore {
           this.activityRegistry.set(this.activity.id, this.activity);
           this.loading = false;
         }
-      })
+      });
     } catch (error) {
       runInAction(() => {
         this.loading = false;
-      })
-      toast.error('Problem cancelling attendance')
+      });
+      toast.error("Problem cancelling attendance");
     }
-    
   };
 }

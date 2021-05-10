@@ -15,5 +15,6 @@ namespace Domain
         
         // virtual because of lazy loading
         public virtual ICollection<UserActivity> UserActivities { get; set; }
+        public virtual ICollection<Comment> Comments { get; set; }
     }
 }
