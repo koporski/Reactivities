@@ -5,3 +5,5 @@ appsettings.json
 *.db
 client-app/.eslintcache
 client-app/debug.log
+wwwroot
+publish
